@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -25,19 +25,16 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define SRS_RTMP_PROTOCOL_CONSTS_HPP
 
 /*
-#include <srs_protocol_utility.hpp>
+#include <srs_rtmp_utility.hpp>
 */
 #include <srs_core.hpp>
 
 #include <string>
 
-// default vhost of rtmp
-#define RTMP_VHOST_DEFAULT "__defaultVhost__"
-// default port of rtmp
-#define RTMP_DEFAULT_PORT "1935"
+#include <srs_kernel_consts.hpp>
 
-// the default chunk size for system.
-#define SRS_CONF_DEFAULT_CHUNK_SIZE 60000
+class SrsMessageHeader;
+class SrsSharedPtrMessage;
 
 /**
 * parse the tcUrl, output the schema, host, vhost, app and port.
@@ -50,20 +47,23 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 * @param app, for example, live
 * @param port, for example, 19350
 *       default to 1935 if not specified.
+* param param, for example, vhost=vhost.ossrs.net
 */
 extern void srs_discovery_tc_url(
     std::string tcUrl, 
     std::string& schema, std::string& host, std::string& vhost, 
-    std::string& app, std::string& port
+    std::string& app, std::string& port, std::string& param
 );
 
 /**
 * resolve the vhost in query string
+* @pram vhost, update the vhost if query contains the vhost.
 * @param app, may contains the vhost in query string format:
 *   app?vhost=request_vhost
 *   app...vhost...request_vhost
+* @param param, the query, for example, ?vhost=xxx
 */ 
-extern void srs_vhost_resolve(std::string& vhost, std::string& app);
+extern void srs_vhost_resolve(std::string& vhost, std::string& app, std::string& param);
 
 /**
 * generate ramdom data for handshake.
@@ -72,12 +72,14 @@ extern void srs_random_generate(char* bytes, int size);
 
 /**
 * generate the tcUrl.
+* @param param, the app parameters in tcUrl. for example, ?key=xxx,vhost=xxx
 * @return the tcUrl generated from ip/vhost/app/port.
 * @remark when vhost equals to __defaultVhost__, use ip as vhost.
 * @remark ignore port if port equals to default port 1935.
 */
 extern std::string srs_generate_tc_url(
-    std::string ip, std::string vhost, std::string app, std::string port
+    std::string ip, std::string vhost, std::string app, std::string port,
+    std::string param
 );
 
 /**
@@ -86,4 +88,35 @@ extern std::string srs_generate_tc_url(
 */
 extern bool srs_bytes_equals(void* pa, void* pb, int size);
 
+/**
+* generate the c0 chunk header for msg.
+* @param cache, the cache to write header.
+* @param nb_cache, the size of cache.
+* @return the size of header. 0 if cache not enough.
+*/
+extern int srs_chunk_header_c0(
+    int perfer_cid, u_int32_t timestamp, int32_t payload_length,
+    int8_t message_type, int32_t stream_id,
+    char* cache, int nb_cache
+);
+
+/**
+* generate the c3 chunk header for msg.
+* @param cache, the cache to write header.
+* @param nb_cache, the size of cache.
+* @return the size of header. 0 if cache not enough.
+*/
+extern int srs_chunk_header_c3(
+    int perfer_cid, u_int32_t timestamp, 
+    char* cache, int nb_cache
+);
+
+/**
+* create shared ptr message from bytes.
+* @param data the packet bytes. user should never free it.
+* @param ppmsg output the shared ptr message. user should free it.
+*/
+extern int srs_rtmp_create_msg(char type, u_int32_t timestamp, char* data, int size, int stream_id, SrsSharedPtrMessage** ppmsg);
+
 #endif
+

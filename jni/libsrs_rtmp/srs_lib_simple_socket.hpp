@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -30,8 +30,14 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include <srs_core.hpp>
 
-#include <srs_protocol_io.hpp>
-    
+#include <srs_rtmp_io.hpp>
+#include <srs_librtmp.hpp>
+
+// for srs-librtmp, @see https://github.com/winlinvip/simple-rtmp-server/issues/213
+#ifndef _WIN32
+    #define SOCKET int
+#endif
+
 /**
 * simple socket stream,
 * use tcp socket, sync block mode, for client like srs-librtmp.
@@ -39,15 +45,12 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 class SimpleSocketStream : public ISrsProtocolReaderWriter
 {
 private:
-    int64_t recv_timeout;
-    int64_t send_timeout;
-    int64_t recv_bytes;
-    int64_t send_bytes;
-    int fd;
+    srs_hijack_io_t io;
 public:
     SimpleSocketStream();
     virtual ~SimpleSocketStream();
 public:
+    virtual srs_hijack_io_t hijack_io();
     virtual int create_socket();
     virtual int connect(const char* server, int port);
 // ISrsBufferReader
@@ -72,3 +75,4 @@ public:
 };
 
 #endif
+

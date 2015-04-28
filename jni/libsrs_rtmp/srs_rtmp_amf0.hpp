@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -25,7 +25,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define SRS_RTMP_PROTOCOL_AMF0_HPP
 
 /*
-#include <srs_protocol_amf0.hpp>
+#include <srs_rtmp_amf0.hpp>
 */
 
 #include <srs_core.hpp>
@@ -43,6 +43,7 @@ namespace _srs_internal
 {
     class SrsUnSortedHashtable;
     class SrsAmf0ObjectEOF;
+    class SrsAmf0Date;
 }
 
 /*
@@ -185,6 +186,12 @@ public:
     */
     virtual bool is_strict_array();
     /**
+    * whether current instance is an AMF0 date.
+    * @return true if instance is an AMF0 date; otherwise, false.
+    * @remark, if true, use to_date() to get its value.
+    */
+    virtual bool is_date();
+    /**
     * whether current instance is an AMF0 object, object-EOF, ecma-array or strict-array.
     */
     virtual bool is_complex_object();
@@ -211,6 +218,12 @@ public:
     * @remark assert is_number(), user must ensure the type then convert.
     */
     virtual double to_number();
+    /**
+    * convert instance to date,
+    * @remark assert is_date(), user must ensure the type then convert.
+    */
+    virtual int64_t to_date();
+    virtual int16_t to_date_time_zone();
     /**
     * convert instance to amf0 object,
     * @remark assert is_object(), user must ensure the type then convert.
@@ -273,6 +286,10 @@ public:
     * create an AMF0 number instance, set number content by value.
     */
     static SrsAmf0Any* number(double value = 0.0);
+    /**
+    * create an AMF0 date instance
+    */
+    static SrsAmf0Any* date(int64_t value = 0);
     /**
     * create an AMF0 null instance
     */
@@ -532,6 +549,7 @@ public:
     static int utf8(std::string value);
     static int str(std::string value);
     static int number();
+    static int date();
     static int null();
     static int undefined();
     static int boolean();
@@ -674,6 +692,43 @@ namespace _srs_internal
     };
     
     /**
+    * 2.13 Date Type
+    * time-zone = S16 ; reserved, not supported should be set to 0x0000
+    * date-type = date-marker DOUBLE time-zone
+    * @see: https://github.com/winlinvip/simple-rtmp-server/issues/185
+    */
+    class SrsAmf0Date : public SrsAmf0Any
+    {
+    private:
+        int64_t _date_value;
+        int16_t _time_zone;
+    private:
+        friend class SrsAmf0Any;
+        /**
+        * make amf0 date to private,
+        * use should never declare it, use SrsAmf0Any::date() to create it.
+        */
+        SrsAmf0Date(int64_t value);
+    public:
+        virtual ~SrsAmf0Date();
+    // serialize/deserialize to/from stream.
+    public:
+        virtual int total_size();
+        virtual int read(SrsStream* stream);
+        virtual int write(SrsStream* stream);
+        virtual SrsAmf0Any* copy();
+    public:
+        /**
+        * get the date value.
+        */
+        virtual int64_t date();
+        /**
+        * get the time_zone.
+        */
+        virtual int16_t time_zone();
+    };
+    
+    /**
     * read amf0 null from stream.
     * 2.7 null Type
     * null-type = null-marker
@@ -739,6 +794,10 @@ namespace _srs_internal
         virtual std::string key_at(int index);
         virtual const char* key_raw_at(int index);
         virtual SrsAmf0Any* value_at(int index);
+        /**
+        * set the value of hashtable.
+        * @param value, the value to set. NULL to delete the property.
+        */
         virtual void set(std::string key, SrsAmf0Any* value);
     public:
         virtual SrsAmf0Any* get_property(std::string name);
@@ -755,8 +814,6 @@ namespace _srs_internal
     */
     class SrsAmf0ObjectEOF : public SrsAmf0Any
     {
-    public:
-        int16_t utf8_empty;
     public:
         SrsAmf0ObjectEOF();
         virtual ~SrsAmf0ObjectEOF();

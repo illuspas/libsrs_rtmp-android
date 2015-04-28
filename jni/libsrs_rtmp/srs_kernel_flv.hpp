@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -66,12 +66,14 @@ public:
     virtual int write_header(char flv_header[9]);
     /**
     * write flv metadata. 
+    * @param type, the type of data, or other message type.
+    *       @see SrsCodecFlvTag
     * @param data, the amf0 metadata which serialize from:
     *   AMF0 string: onMetaData,
     *   AMF0 object: the metadata object.
     * @remark assert data is not NULL.
     */
-    virtual int write_metadata(char* data, int size);
+    virtual int write_metadata(char type, char* data, int size);
     /**
     * write audio/video packet.
     * @remark assert data is not NULL.
@@ -175,3 +177,4 @@ public:
 };
 
 #endif
+

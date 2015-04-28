@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -41,9 +41,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 *       SrsAutoFree(MyClass, po);
 */
 #define SrsAutoFree(className, instance) \
-    __SrsAutoFree<className> _auto_free_##instance(&instance)
+    impl__SrsAutoFree<className> _auto_free_##instance(&instance)
 template<class T>
-class __SrsAutoFree
+class impl__SrsAutoFree
 {
 private:
     T** ptr;
@@ -51,11 +51,11 @@ public:
     /**
     * auto delete the ptr.
     */
-    __SrsAutoFree(T** _ptr) {
+    impl__SrsAutoFree(T** _ptr) {
         ptr = _ptr;
     }
     
-    virtual ~__SrsAutoFree() {
+    virtual ~impl__SrsAutoFree() {
         if (ptr == NULL || *ptr == NULL) {
             return;
         }

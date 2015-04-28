@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -152,6 +152,24 @@ public:
     * write bytes to stream
     */
     virtual void write_bytes(char* data, int size);
+};
+
+/**
+ * the bit stream.
+ */
+class SrsBitStream
+{
+private:
+    int8_t cb;
+    u_int8_t cb_left;
+    SrsStream* stream;
+public:
+    SrsBitStream();
+    virtual ~SrsBitStream();
+public:
+    virtual int initialize(SrsStream* s);
+    virtual bool empty();
+    virtual int8_t read_bit();
 };
 
 #endif

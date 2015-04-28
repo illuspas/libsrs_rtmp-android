@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -250,5 +250,40 @@ void SrsStream::write_bytes(char* data, int size)
     
     memcpy(p, data, size);
     p += size;
+}
+
+SrsBitStream::SrsBitStream()
+{
+    cb = 0;
+    cb_left = 0;
+    stream = NULL;
+}
+
+SrsBitStream::~SrsBitStream()
+{
+}
+
+int SrsBitStream::initialize(SrsStream* s) {
+    stream = s;
+    return ERROR_SUCCESS;
+}
+
+bool SrsBitStream::empty() {
+    if (cb_left) {
+        return false;
+    }
+    return stream->empty();
+}
+
+int8_t SrsBitStream::read_bit() {
+    if (!cb_left) {
+        srs_assert(!stream->empty());
+        cb = stream->read_1bytes();
+        cb_left = 8;
+    }
+    
+    int8_t v = (cb >> (cb_left - 1)) & 0x01;
+    cb_left--;
+    return v;
 }
 

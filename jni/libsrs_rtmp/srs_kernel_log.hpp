@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -35,6 +35,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <errno.h>
 #include <string.h>
 
+#include <srs_kernel_consts.hpp>
+
 /**
 * the log level, for example:
 * if specified Debug level, all level messages will be logged.
@@ -50,6 +52,8 @@ public:
     static const int Trace = 0x03;
     static const int Warn = 0x04;
     static const int Error = 0x05;
+    // specified the disabled level, no log, for utest.
+    static const int Disabled = 0x06;
 };
 
 /**
@@ -131,36 +135,19 @@ extern ISrsThreadContext* _srs_context;
     #define srs_error(msg, ...)   _srs_log->error(__PRETTY_FUNCTION__, _srs_context->get_id(), msg, ##__VA_ARGS__)
 #endif
 
-#if 1
+// TODO: FIXME: add more verbose and info logs.
+#ifndef SRS_AUTO_VERBOSE
     #undef srs_verbose
     #define srs_verbose(msg, ...) (void)0
 #endif
-#if 1
+#ifndef SRS_AUTO_INFO
     #undef srs_info
     #define srs_info(msg, ...) (void)0
 #endif
-#if 0
+#ifndef SRS_AUTO_TRACE
     #undef srs_trace
     #define srs_trace(msg, ...) (void)0
 #endif
 
-// downloading speed-up, play to edge, ingest from origin
-#define SRS_LOG_ID_EDGE_PLAY "EIG"
-// uploading speed-up, publish to edge, foward to origin
-#define SRS_LOG_ID_EDGE_PUBLISH "EFW"
-// edge/origin forwarder.
-#define SRS_LOG_ID_FOWARDER "FWR"
-// play stream on edge/origin.
-#define SRS_LOG_ID_PLAY "PLA"
-// client publish to edge/origin
-#define SRS_LOG_ID_CLIENT_PUBLISH "CPB"
-// web/flash publish to edge/origin
-#define SRS_LOG_ID_WEB_PUBLISH "WPB"
-// ingester for edge(play)/origin
-#define SRS_LOG_ID_INGESTER "IGS"
-// hls log id.
-#define SRS_LOG_ID_HLS "HLS"
-// encoder log id.
-#define SRS_LOG_ID_ENCODER "ENC"
-
 #endif
+

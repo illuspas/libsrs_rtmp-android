@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -21,233 +21,56 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#ifndef SRS_RTMP_PROTOCOL_RTMP_STACK_HPP
-#define SRS_RTMP_PROTOCOL_RTMP_STACK_HPP
+#ifndef SRS_RTMP_PROTOCOL_STACK_HPP
+#define SRS_RTMP_PROTOCOL_STACK_HPP
 
 /*
-#include <srs_protocol_rtmp_stack.hpp>
+#include <srs_rtmp_stack.hpp>
 */
 
 #include <srs_core.hpp>
 
 #include <map>
+#include <vector>
 #include <string>
+
+// for srs-librtmp, @see https://github.com/winlinvip/simple-rtmp-server/issues/213
+#ifndef _WIN32
+#include <sys/uio.h>
+#endif
 
 #include <srs_kernel_log.hpp>
 #include <srs_kernel_error.hpp>
+#include <srs_kernel_consts.hpp>
+#include <srs_core_performance.hpp>
 
 class ISrsProtocolReaderWriter;
-class SrsBuffer;
+class SrsFastBuffer;
 class SrsPacket;
 class SrsStream;
 class SrsAmf0Object;
 class SrsAmf0Any;
 class SrsMessageHeader;
-class SrsMessage;
+class SrsCommonMessage;
 class SrsChunkStream;
- 
-// the following is the timeout for rtmp protocol, 
-// to avoid death connection.
+class SrsSharedPtrMessage;
+class IMergeReadHandler;
 
-// the timeout to wait client data,
-// if timeout, close the connection.
-#define SRS_SEND_TIMEOUT_US (int64_t)(30*1000*1000LL)
-
-// the timeout to send data to client,
-// if timeout, close the connection.
-#define SRS_RECV_TIMEOUT_US (int64_t)(30*1000*1000LL)
-
-// the timeout to wait for client control message,
-// if timeout, we generally ignore and send the data to client,
-// generally, it's the pulse time for data seding.
-#define SRS_PULSE_TIMEOUT_US (int64_t)(200*1000LL)
-
+/****************************************************************************
+*****************************************************************************
+****************************************************************************/
 /**
-* max rtmp header size:
-*     1bytes basic header,
-*     11bytes message header,
-*     4bytes timestamp header,
-* that is, 1+11+4=16bytes.
+* 6.1. Chunk Format
+* Extended timestamp: 0 or 4 bytes
+* This field MUST be sent when the normal timsestamp is set to
+* 0xffffff, it MUST NOT be sent if the normal timestamp is set to
+* anything else. So for values less than 0xffffff the normal
+* timestamp field SHOULD be used in which case the extended timestamp
+* MUST NOT be present. For values greater than or equal to 0xffffff
+* the normal timestamp field MUST NOT be used and MUST be set to
+* 0xffffff and the extended timestamp MUST be sent.
 */
-#define RTMP_MAX_FMT0_HEADER_SIZE 16
-/**
-* max rtmp header size:
-*     1bytes basic header,
-*     4bytes timestamp header,
-* that is, 1+4=5bytes.
-*/
-// always use fmt0 as cache.
-//#define RTMP_MAX_FMT3_HEADER_SIZE 5
-
-/**
-* the protocol provides the rtmp-message-protocol services,
-* to recv RTMP message from RTMP chunk stream,
-* and to send out RTMP message over RTMP chunk stream.
-*/
-class SrsProtocol
-{
-private:
-    class AckWindowSize
-    {
-    public:
-        int ack_window_size;
-        int64_t acked_size;
-        
-        AckWindowSize();
-    };
-// peer in/out
-private:
-    /**
-    * underlayer socket object, send/recv bytes.
-    */
-    ISrsProtocolReaderWriter* skt;
-    /**
-    * requests sent out, used to build the response.
-    * key: transactionId
-    * value: the request command name
-    */
-    std::map<double, std::string> requests;
-// peer in
-private:
-    /**
-    * chunk stream to decode RTMP messages.
-    */
-    std::map<int, SrsChunkStream*> chunk_streams;
-    /**
-    * bytes buffer cache, recv from skt, provide services for stream.
-    */
-    SrsBuffer* in_buffer;
-    /**
-    * input chunk size, default to 128, set by peer packet.
-    */
-    int32_t in_chunk_size;
-    /**
-    * input ack size, when to send the acked packet.
-    */
-    AckWindowSize in_ack_size;
-// peer out
-private:
-    /**
-    * output header cache.
-    * used for type0, 11bytes(or 15bytes with extended timestamp) header.
-    * or for type3, 1bytes(or 5bytes with extended timestamp) header.
-    */
-    char out_header_cache[RTMP_MAX_FMT0_HEADER_SIZE];
-    /**
-    * output chunk size, default to 128, set by config.
-    */
-    int32_t out_chunk_size;
-public:
-    /**
-    * use io to create the protocol stack,
-    * @param io, provides io interfaces, user must free it.
-    */
-    SrsProtocol(ISrsProtocolReaderWriter* io);
-    virtual ~SrsProtocol();
-public:
-    /**
-    * set/get the recv timeout in us.
-    * if timeout, recv/send message return ERROR_SOCKET_TIMEOUT.
-    */
-    virtual void set_recv_timeout(int64_t timeout_us);
-    virtual int64_t get_recv_timeout();
-    /**
-    * set/get the send timeout in us.
-    * if timeout, recv/send message return ERROR_SOCKET_TIMEOUT.
-    */
-    virtual void set_send_timeout(int64_t timeout_us);
-    virtual int64_t get_send_timeout();
-    /**
-    * get recv/send bytes.
-    */
-    virtual int64_t get_recv_bytes();
-    virtual int64_t get_send_bytes();
-public:
-    /**
-    * recv a RTMP message, which is bytes oriented.
-    * user can use decode_message to get the decoded RTMP packet.
-    * @param pmsg, set the received message, 
-    *       always NULL if error, 
-    *       NULL for unknown packet but return success.
-    *       never NULL if decode success.
-    */
-    virtual int recv_message(SrsMessage** pmsg);
-    /**
-    * decode bytes oriented RTMP message to RTMP packet,
-    * @param ppacket, output decoded packet, 
-    *       always NULL if error, never NULL if success.
-    * @return error when unknown packet, error when decode failed.
-    */
-    virtual int decode_message(SrsMessage* msg, SrsPacket** ppacket);
-    /**
-    * send the RTMP message and always free it.
-    * user must never free or use the msg after this method,
-    * for it will always free the msg.
-    * @param msg, the msg to send out, never be NULL.
-    * @param stream_id, the stream id of packet to send over, 0 for control message.
-    */
-    virtual int send_and_free_message(SrsMessage* msg, int stream_id);
-    /**
-    * send the RTMP packet and always free it.
-    * user must never free or use the packet after this method,
-    * for it will always free the packet.
-    * @param packet, the packet to send out, never be NULL.
-    * @param stream_id, the stream id of packet to send over, 0 for control message.
-    */
-    virtual int send_and_free_packet(SrsPacket* packet, int stream_id);
-private:
-    /**
-    * send out the message, donot free it, the caller must free the param msg.
-    * @param packet the packet of message, NULL for raw message.
-    */
-    virtual int do_send_message(SrsMessage* msg, SrsPacket* packet);
-    /**
-    * imp for decode_message
-    */
-    virtual int do_decode_message(SrsMessageHeader& header, SrsStream* stream, SrsPacket** ppacket);
-    /**
-    * recv bytes oriented RTMP message from protocol stack.
-    * return error if error occur and nerver set the pmsg,
-    * return success and pmsg set to NULL if no entire message got,
-    * return success and pmsg set to entire message if got one.
-    */
-    virtual int recv_interlaced_message(SrsMessage** pmsg);
-    /**
-    * read the chunk basic header(fmt, cid) from chunk stream.
-    * user can discovery a SrsChunkStream by cid.
-    * @bh_size return the chunk basic header size, to remove the used bytes when finished.
-    */
-    virtual int read_basic_header(char& fmt, int& cid, int& bh_size);
-    /**
-    * read the chunk message header(timestamp, payload_length, message_type, stream_id) 
-    * from chunk stream and save to SrsChunkStream.
-    * @mh_size return the chunk message header size, to remove the used bytes when finished.
-    */
-    virtual int read_message_header(SrsChunkStream* chunk, char fmt, int bh_size, int& mh_size);
-    /**
-    * read the chunk payload, remove the used bytes in buffer,
-    * if got entire message, set the pmsg.
-    * @payload_size read size in this roundtrip, generally a chunk size or left message size.
-    */
-    virtual int read_message_payload(SrsChunkStream* chunk, int bh_size, int mh_size, int& payload_size, SrsMessage** pmsg);
-    /**
-    * when recv message, update the context.
-    */
-    virtual int on_recv_message(SrsMessage* msg);
-    /**
-    * when message sentout, update the context.
-    */
-    virtual int on_send_message(SrsMessage* msg, SrsPacket* packet);
-private:
-    /**
-    * auto response the ack message.
-    */
-    virtual int response_acknowledgement_message();
-    /**
-    * auto response the ping message.
-    */
-    virtual int response_ping_message(int32_t timestamp);
-};
+#define RTMP_EXTENDED_TIMESTAMP                 0xFFFFFF
 
 /**
 * 4.1. Message Header
@@ -256,24 +79,27 @@ class SrsMessageHeader
 {
 public:
     /**
-    * One byte field to represent the message type. A range of type IDs
-    * (1-7) are reserved for protocol control messages.
+    * 3bytes.
+    * Three-byte field that contains a timestamp delta of the message.
+    * @remark, only used for decoding message from chunk stream.
     */
-    int8_t message_type;
+    int32_t timestamp_delta;
     /**
+    * 3bytes.
     * Three-byte field that represents the size of the payload in bytes.
     * It is set in big-endian format.
     */
     int32_t payload_length;
     /**
-    * Three-byte field that contains a timestamp delta of the message.
-    * The 4 bytes are packed in the big-endian order.
-    * @remark, only used for decoding message from chunk stream.
+    * 1byte.
+    * One byte field to represent the message type. A range of type IDs
+    * (1-7) are reserved for protocol control messages.
     */
-    int32_t timestamp_delta;
+    int8_t message_type;
     /**
-    * Three-byte field that identifies the stream of the message. These
-    * bytes are set in big-endian format.
+    * 4bytes.
+    * Four-byte field that identifies the stream of the message. These
+    * bytes are set in little-endian format.
     */
     int32_t stream_id;
     
@@ -323,6 +149,536 @@ public:
 };
 
 /**
+* message is raw data RTMP message, bytes oriented,
+* protcol always recv RTMP message, and can send RTMP message or RTMP packet.
+* the common message is read from underlay protocol sdk.
+* while the shared ptr message used to copy and send.
+*/
+class SrsCommonMessage
+{
+// 4.1. Message Header
+public:
+    SrsMessageHeader header;
+// 4.2. Message Payload
+public:
+    /**
+    * current message parsed size,
+    *       size <= header.payload_length
+    * for the payload maybe sent in multiple chunks.
+    */
+    int size;
+    /**
+    * the payload of message, the SrsCommonMessage never know about the detail of payload,
+    * user must use SrsProtocol.decode_message to get concrete packet.
+    * @remark, not all message payload can be decoded to packet. for example, 
+    *       video/audio packet use raw bytes, no video/audio packet.
+    */
+    char* payload;
+public:
+    SrsCommonMessage();
+public:
+    virtual ~SrsCommonMessage();
+};
+
+/**
+* the message header for shared ptr message.
+* only the message for all msgs are same.
+*/
+struct SrsSharedMessageHeader
+{
+    /**
+    * 3bytes.
+    * Three-byte field that represents the size of the payload in bytes.
+    * It is set in big-endian format.
+    */
+    int32_t payload_length;
+    /**
+    * 1byte.
+    * One byte field to represent the message type. A range of type IDs
+    * (1-7) are reserved for protocol control messages.
+    */
+    int8_t message_type;
+    /**
+    * get the perfered cid(chunk stream id) which sendout over.
+    * set at decoding, and canbe used for directly send message,
+    * for example, dispatch to all connections.
+    */
+    int perfer_cid;
+};
+
+/**
+* shared ptr message.
+* for audio/video/data message that need less memory copy.
+* and only for output.
+*
+* create first object by constructor and create(),
+* use copy if need reference count message.
+*
+*/
+class SrsSharedPtrMessage
+{
+// 4.1. Message Header
+public:
+    // the header can shared, only set the timestamp and stream id.
+    // @see https://github.com/winlinvip/simple-rtmp-server/issues/251
+    //SrsSharedMessageHeader header;
+    /**
+    * Four-byte field that contains a timestamp of the message.
+    * The 4 bytes are packed in the big-endian order.
+    * @remark, used as calc timestamp when decode and encode time.
+    * @remark, we use 64bits for large time for jitter detect and hls.
+    */
+    int64_t timestamp;
+    /**
+    * 4bytes.
+    * Four-byte field that identifies the stream of the message. These
+    * bytes are set in big-endian format.
+    */
+    int32_t stream_id;
+// 4.2. Message Payload
+public:
+    /**
+    * current message parsed size,
+    *       size <= header.payload_length
+    * for the payload maybe sent in multiple chunks.
+    */
+    int size;
+    /**
+    * the payload of message, the SrsCommonMessage never know about the detail of payload,
+    * user must use SrsProtocol.decode_message to get concrete packet.
+    * @remark, not all message payload can be decoded to packet. for example,
+    *       video/audio packet use raw bytes, no video/audio packet.
+    */
+    char* payload;
+private:
+    class SrsSharedPtrPayload
+    {
+    public:
+        // shared message header.
+        // @see https://github.com/winlinvip/simple-rtmp-server/issues/251
+        SrsSharedMessageHeader header;
+        // actual shared payload.
+        char* payload;
+        // size of payload.
+        int size;
+        // the reference count
+        int shared_count;
+    public:
+        SrsSharedPtrPayload();
+        virtual ~SrsSharedPtrPayload();
+    };
+    SrsSharedPtrPayload* ptr;
+public:
+    SrsSharedPtrMessage();
+    virtual ~SrsSharedPtrMessage();
+public:
+    /**
+    * create shared ptr message,
+    * copy header, manage the payload of msg,
+    * set the payload to NULL to prevent double free.
+    * @remark payload of msg set to NULL if success.
+    */
+    virtual int create(SrsCommonMessage* msg);
+    /**
+    * create shared ptr message,
+    * from the header and payload.
+    * @remark user should never free the payload.
+    * @param pheader, the header to copy to the message. NULL to ignore.
+    */
+    virtual int create(SrsMessageHeader* pheader, char* payload, int size);
+    /**
+    * get current reference count.
+    * when this object created, count set to 0.
+    * if copy() this object, count increase 1.
+    * if this or copy deleted, free payload when count is 0, or count--.
+    * @remark, assert object is created.
+    */
+    virtual int count();
+    /**
+    * check perfer cid and stream id.
+    * @return whether stream id already set.
+    */
+    virtual bool check(int stream_id);
+public:
+    virtual bool is_av();
+    virtual bool is_audio();
+    virtual bool is_video();
+public:
+    /**
+    * generate the chunk header to cache.
+    * @return the size of header.
+    */
+    virtual int chunk_header(char* cache, int nb_cache, bool c0);
+public:
+    /**
+    * copy current shared ptr message, use ref-count.
+    * @remark, assert object is created.
+    */
+    virtual SrsSharedPtrMessage* copy();
+};
+
+/**
+ * the decoded message payload.
+ * @remark we seperate the packet from message,
+ *        for the packet focus on logic and domain data,
+ *        the message bind to the protocol and focus on protocol, such as header.
+ *         we can merge the message and packet, using OOAD hierachy, packet extends from message,
+ *         it's better for me to use components -- the message use the packet as payload.
+ */
+class SrsPacket
+{
+public:
+    SrsPacket();
+    virtual ~SrsPacket();
+public:
+    /**
+     * the subpacket can override this encode,
+     * for example, video and audio will directly set the payload withou memory copy,
+     * other packet which need to serialize/encode to bytes by override the
+     * get_size and encode_packet.
+     */
+    virtual int encode(int& size, char*& payload);
+    // decode functions for concrete packet to override.
+public:
+    /**
+     * subpacket must override to decode packet from stream.
+     * @remark never invoke the super.decode, it always failed.
+     */
+    virtual int decode(SrsStream* stream);
+    // encode functions for concrete packet to override.
+public:
+    /**
+     * the cid(chunk id) specifies the chunk to send data over.
+     * generally, each message perfer some cid, for example,
+     * all protocol control messages perfer RTMP_CID_ProtocolControl,
+     * SrsSetWindowAckSizePacket is protocol control message.
+     */
+    virtual int get_prefer_cid();
+    /**
+     * subpacket must override to provide the right message type.
+     * the message type set the RTMP message type in header.
+     */
+    virtual int get_message_type();
+protected:
+    /**
+     * subpacket can override to calc the packet size.
+     */
+    virtual int get_size();
+    /**
+     * subpacket can override to encode the payload to stream.
+     * @remark never invoke the super.encode_packet, it always failed.
+     */
+    virtual int encode_packet(SrsStream* stream);
+};
+
+/**
+* the protocol provides the rtmp-message-protocol services,
+* to recv RTMP message from RTMP chunk stream,
+* and to send out RTMP message over RTMP chunk stream.
+*/
+class SrsProtocol
+{
+private:
+    class AckWindowSize
+    {
+    public:
+        int ack_window_size;
+        int64_t acked_size;
+        
+        AckWindowSize();
+    };
+// peer in/out
+private:
+    /**
+    * underlayer socket object, send/recv bytes.
+    */
+    ISrsProtocolReaderWriter* skt;
+    /**
+    * requests sent out, used to build the response.
+    * key: transactionId
+    * value: the request command name
+    */
+    std::map<double, std::string> requests;
+// peer in
+private:
+    /**
+    * chunk stream to decode RTMP messages.
+    */
+    std::map<int, SrsChunkStream*> chunk_streams;
+    /**
+    * cache some frequently used chunk header.
+    * cs_cache, the chunk stream cache.
+    * @see https://github.com/winlinvip/simple-rtmp-server/issues/249
+    */
+    SrsChunkStream** cs_cache;
+    /**
+    * bytes buffer cache, recv from skt, provide services for stream.
+    */
+    SrsFastBuffer* in_buffer;
+    /**
+    * input chunk size, default to 128, set by peer packet.
+    */
+    int32_t in_chunk_size;
+    /**
+    * input ack size, when to send the acked packet.
+    */
+    AckWindowSize in_ack_size;
+    /**
+    * whether auto response when recv messages.
+    * default to true for it's very easy to use the protocol stack.
+    * @see: https://github.com/winlinvip/simple-rtmp-server/issues/217
+    */
+    bool auto_response_when_recv;
+    /**
+    * when not auto response message, manual flush the messages in queue.
+    */
+    std::vector<SrsPacket*> manual_response_queue;
+// peer out
+private:
+    /**
+    * cache for multiple messages send,
+    * initialize to iovec[SRS_CONSTS_IOVS_MAX] and realloc when consumed,
+    * it's ok to realloc the iovs cache, for all ptr is ok.
+    */
+    iovec* out_iovs;
+    int nb_out_iovs;
+    /**
+    * output header cache.
+    * used for type0, 11bytes(or 15bytes with extended timestamp) header.
+    * or for type3, 1bytes(or 5bytes with extended timestamp) header.
+    * the c0c3 caches must use unit SRS_CONSTS_RTMP_MAX_FMT0_HEADER_SIZE bytes.
+    * 
+    * @remark, the c0c3 cache cannot be realloc.
+    */
+    char out_c0c3_caches[SRS_CONSTS_C0C3_HEADERS_MAX];
+    // whether warned user to increase the c0c3 header cache.
+    bool warned_c0c3_cache_dry;
+    /**
+    * output chunk size, default to 128, set by config.
+    */
+    int32_t out_chunk_size;
+public:
+    SrsProtocol(ISrsProtocolReaderWriter* io);
+    virtual ~SrsProtocol();
+public:
+    /**
+    * set the auto response message when recv for protocol stack.
+    * @param v, whether auto response message when recv message.
+    * @see: https://github.com/winlinvip/simple-rtmp-server/issues/217
+    */
+    virtual void set_auto_response(bool v);
+    /**
+    * flush for manual response when the auto response is disabled
+    * by set_auto_response(false), we default use auto response, so donot
+    * need to call this api(the protocol sdk will auto send message).
+    * @see the auto_response_when_recv and manual_response_queue.
+    */
+    virtual int manual_response_flush();
+public:
+#ifdef SRS_PERF_MERGED_READ
+    /**
+    * to improve read performance, merge some packets then read,
+    * when it on and read small bytes, we sleep to wait more data.,
+    * that is, we merge some data to read together.
+    * @param v true to ename merged read.
+    * @param handler the handler when merge read is enabled.
+    * @see https://github.com/winlinvip/simple-rtmp-server/issues/241
+    */
+    virtual void set_merge_read(bool v, IMergeReadHandler* handler);
+    /**
+    * create buffer with specifeid size.
+    * @param buffer the size of buffer.
+    * @remark when MR(SRS_PERF_MERGED_READ) disabled, always set to 8K.
+    * @remark when buffer changed, the previous ptr maybe invalid.
+    * @see https://github.com/winlinvip/simple-rtmp-server/issues/241
+    */
+    virtual void set_recv_buffer(int buffer_size);
+#endif
+public:
+    /**
+    * set/get the recv timeout in us.
+    * if timeout, recv/send message return ERROR_SOCKET_TIMEOUT.
+    */
+    virtual void set_recv_timeout(int64_t timeout_us);
+    virtual int64_t get_recv_timeout();
+    /**
+    * set/get the send timeout in us.
+    * if timeout, recv/send message return ERROR_SOCKET_TIMEOUT.
+    */
+    virtual void set_send_timeout(int64_t timeout_us);
+    virtual int64_t get_send_timeout();
+    /**
+    * get recv/send bytes.
+    */
+    virtual int64_t get_recv_bytes();
+    virtual int64_t get_send_bytes();
+public:
+    /**
+    * recv a RTMP message, which is bytes oriented.
+    * user can use decode_message to get the decoded RTMP packet.
+    * @param pmsg, set the received message, 
+    *       always NULL if error, 
+    *       NULL for unknown packet but return success.
+    *       never NULL if decode success.
+    * @remark, drop message when msg is empty or payload length is empty.
+    */
+    virtual int recv_message(SrsCommonMessage** pmsg);
+    /**
+    * decode bytes oriented RTMP message to RTMP packet,
+    * @param ppacket, output decoded packet, 
+    *       always NULL if error, never NULL if success.
+    * @return error when unknown packet, error when decode failed.
+    */
+    virtual int decode_message(SrsCommonMessage* msg, SrsPacket** ppacket);
+    /**
+    * send the RTMP message and always free it.
+    * user must never free or use the msg after this method,
+    * for it will always free the msg.
+    * @param msg, the msg to send out, never be NULL.
+    * @param stream_id, the stream id of packet to send over, 0 for control message.
+    */
+    virtual int send_and_free_message(SrsSharedPtrMessage* msg, int stream_id);
+    /**
+    * send the RTMP message and always free it.
+    * user must never free or use the msg after this method,
+    * for it will always free the msg.
+    * @param msgs, the msgs to send out, never be NULL.
+    * @param nb_msgs, the size of msgs to send out.
+    * @param stream_id, the stream id of packet to send over, 0 for control message.
+    */
+    virtual int send_and_free_messages(SrsSharedPtrMessage** msgs, int nb_msgs, int stream_id);
+    /**
+    * send the RTMP packet and always free it.
+    * user must never free or use the packet after this method,
+    * for it will always free the packet.
+    * @param packet, the packet to send out, never be NULL.
+    * @param stream_id, the stream id of packet to send over, 0 for control message.
+    */
+    virtual int send_and_free_packet(SrsPacket* packet, int stream_id);
+public:
+    /**
+    * expect a specified message, drop others util got specified one.
+    * @pmsg, user must free it. NULL if not success.
+    * @ppacket, store in the pmsg, user must never free it. NULL if not success.
+    * @remark, only when success, user can use and must free the pmsg/ppacket.
+    * for example:
+             SrsCommonMessage* msg = NULL;
+            SrsConnectAppResPacket* pkt = NULL;
+            if ((ret = srs_rtmp_expect_message<SrsConnectAppResPacket>(protocol, &msg, &pkt)) != ERROR_SUCCESS) {
+                return ret;
+            }
+            // use pkt
+    * user should never recv message and convert it, use this method instead.
+    * if need to set timeout, use set timeout of SrsProtocol.
+    */
+    template<class T>
+    int expect_message(SrsCommonMessage** pmsg, T** ppacket)
+    {
+        *pmsg = NULL;
+        *ppacket = NULL;
+        
+        int ret = ERROR_SUCCESS;
+        
+        while (true) {
+            SrsCommonMessage* msg = NULL;
+            if ((ret = recv_message(&msg)) != ERROR_SUCCESS) {
+                if (ret != ERROR_SOCKET_TIMEOUT && !srs_is_client_gracefully_close(ret)) {
+                    srs_error("recv message failed. ret=%d", ret);
+                }
+                return ret;
+            }
+            srs_verbose("recv message success.");
+            
+            SrsPacket* packet = NULL;
+            if ((ret = decode_message(msg, &packet)) != ERROR_SUCCESS) {
+                srs_error("decode message failed. ret=%d", ret);
+                srs_freep(msg);
+                srs_freep(packet);
+                return ret;
+            }
+            
+            T* pkt = dynamic_cast<T*>(packet);
+            if (!pkt) {
+                srs_info("drop message(type=%d, size=%d, time=%"PRId64", sid=%d).", 
+                    msg->header.message_type, msg->header.payload_length,
+                    msg->header.timestamp, msg->header.stream_id);
+                srs_freep(msg);
+                srs_freep(packet);
+                continue;
+            }
+            
+            *pmsg = msg;
+            *ppacket = pkt;
+            break;
+        }
+        
+        return ret;
+    }
+private:
+    /**
+    * send out the messages, donot free it, 
+    * the caller must free the param msgs.
+    */
+    virtual int do_send_messages(SrsSharedPtrMessage** msgs, int nb_msgs);
+    /**
+    * send iovs. send multiple times if exceed limits.
+    */
+    virtual int do_iovs_send(iovec* iovs, int size);
+    /**
+    * underlayer api for send and free packet.
+    */
+    virtual int do_send_and_free_packet(SrsPacket* packet, int stream_id);
+    /**
+    * use simple algorithm to send the header and bytes.
+    * @remark, for do_send_and_free_packet to send.
+    */
+    virtual int do_simple_send(SrsMessageHeader* mh, char* payload, int size);
+    /**
+    * imp for decode_message
+    */
+    virtual int do_decode_message(SrsMessageHeader& header, SrsStream* stream, SrsPacket** ppacket);
+    /**
+    * recv bytes oriented RTMP message from protocol stack.
+    * return error if error occur and nerver set the pmsg,
+    * return success and pmsg set to NULL if no entire message got,
+    * return success and pmsg set to entire message if got one.
+    */
+    virtual int recv_interlaced_message(SrsCommonMessage** pmsg);
+    /**
+    * read the chunk basic header(fmt, cid) from chunk stream.
+    * user can discovery a SrsChunkStream by cid.
+    */
+    virtual int read_basic_header(char& fmt, int& cid);
+    /**
+    * read the chunk message header(timestamp, payload_length, message_type, stream_id) 
+    * from chunk stream and save to SrsChunkStream.
+    */
+    virtual int read_message_header(SrsChunkStream* chunk, char fmt);
+    /**
+    * read the chunk payload, remove the used bytes in buffer,
+    * if got entire message, set the pmsg.
+    */
+    virtual int read_message_payload(SrsChunkStream* chunk, SrsCommonMessage** pmsg);
+    /**
+    * when recv message, update the context.
+    */
+    virtual int on_recv_message(SrsCommonMessage* msg);
+    /**
+    * when message sentout, update the context.
+    */
+    virtual int on_send_packet(SrsMessageHeader* mh, SrsPacket* packet);
+private:
+    /**
+    * auto response the ack message.
+    */
+    virtual int response_acknowledgement_message();
+    /**
+    * auto response the ping message.
+    */
+    virtual int response_ping_message(int32_t timestamp);
+};
+
+/**
 * incoming chunk stream maybe interlaced,
 * use the chunk stream to cache the input RTMP chunk streams.
 */
@@ -350,7 +706,7 @@ public:
     /**
     * partially read message.
     */
-    SrsMessage* msg;
+    SrsCommonMessage* msg;
     /**
     * decoded msg count, to identify whether the chunk stream is fresh.
     */
@@ -358,161 +714,6 @@ public:
 public:
     SrsChunkStream(int _cid);
     virtual ~SrsChunkStream();
-};
-
-/**
-* message is raw data RTMP message, bytes oriented,
-* protcol always recv RTMP message, and can send RTMP message or RTMP packet.
-* the shared-ptr message is a special RTMP message, use ref-count for performance issue.
-* 
-* @remark, never directly new SrsMessage, the constructor is protected,
-* for in the SrsMessage, we never know whether we should free the message,
-* for SrsCommonMessage, we should free the payload,
-* while for SrsSharedPtrMessage, we should use ref-count to free it.
-* so, use these two concrete message, SrsCommonMessage or SrsSharedPtrMessage instread.
-*/
-class SrsMessage
-{
-// 4.1. Message Header
-public:
-    SrsMessageHeader header;
-// 4.2. Message Payload
-public:
-    /**
-    * The other part which is the payload is the actual data that is
-    * contained in the message. For example, it could be some audio samples
-    * or compressed video data. The payload format and interpretation are
-    * beyond the scope of this document.
-    */
-    int32_t size;
-    int8_t* payload;
-protected:
-    SrsMessage();
-public:
-    virtual ~SrsMessage();
-};
-
-/**
-* the common message used free the payload in common way.
-*/
-class SrsCommonMessage : public SrsMessage
-{
-public:
-    SrsCommonMessage();
-    virtual ~SrsCommonMessage();
-};
-
-/**
-* shared ptr message.
-* for audio/video/data message that need less memory copy.
-* and only for output.
-*
-* create first object by constructor and create(),
-* use copy if need reference count message.
-* 
-* Usage:
-*       SrsSharedPtrMessage msg;
-*       
-*/
-class SrsSharedPtrMessage : public SrsMessage
-{
-private:
-    class __SrsSharedPtr
-    {
-    public:
-        char* payload;
-        int size;
-        int shared_count;
-        
-        __SrsSharedPtr();
-        virtual ~__SrsSharedPtr();
-    };
-    __SrsSharedPtr* ptr;
-public:
-    SrsSharedPtrMessage();
-    virtual ~SrsSharedPtrMessage();
-public:
-    /**
-    * create shared ptr message, 
-    * copy header, manage the payload of msg,
-    * set the payload to NULL to prevent double free.
-    * @remark payload of msg set to NULL if success.
-    */
-    virtual int create(SrsMessage* msg);
-    /**
-    * create shared ptr message,
-    * from the header and payload.
-    * @remark user should never free the payload.
-    */
-    virtual int create(SrsMessageHeader* pheader, char* payload, int size);
-    /**
-    * get current reference count.
-    * when this object created, count set to 0.
-    * if copy() this object, count increase 1.
-    * if this or copy deleted, free payload when count is 0, or count--.
-    * @remark, assert object is created.
-    */
-    virtual int count();
-public:
-    /**
-    * copy current shared ptr message, use ref-count.
-    * @remark, assert object is created.
-    */
-    virtual SrsSharedPtrMessage* copy();
-};
-
-/**
-* the decoded message payload.
-* @remark we seperate the packet from message,
-*        for the packet focus on logic and domain data,
-*        the message bind to the protocol and focus on protocol, such as header.
-*         we can merge the message and packet, using OOAD hierachy, packet extends from message,
-*         it's better for me to use components -- the message use the packet as payload.
-*/
-class SrsPacket
-{
-public:
-    SrsPacket();
-    virtual ~SrsPacket();
-public:
-    /**
-    * the subpacket can override this encode,
-    * for example, video and audio will directly set the payload withou memory copy,
-    * other packet which need to serialize/encode to bytes by override the 
-    * get_size and encode_packet.
-    */
-    virtual int encode(int& size, char*& payload);
-// decode functions for concrete packet to override.
-public:
-    /**
-    * subpacket must override to decode packet from stream.
-    * @remark never invoke the super.decode, it always failed.
-    */
-    virtual int decode(SrsStream* stream);
-// encode functions for concrete packet to override.
-public:
-    /**
-    * the cid(chunk id) specifies the chunk to send data over.
-    * generally, each message perfer some cid, for example, 
-    * all protocol control messages perfer RTMP_CID_ProtocolControl,
-    * SrsSetWindowAckSizePacket is protocol control message.
-    */
-    virtual int get_perfer_cid();
-    /**
-    * subpacket must override to provide the right message type.
-    * the message type set the RTMP message type in header.
-    */
-    virtual int get_message_type();
-protected:
-    /**
-    * subpacket can override to calc the packet size.
-    */
-    virtual int get_size();
-    /**
-    * subpacket can override to encode the payload to stream.
-    * @remark never invoke the super.encode_packet, it always failed.
-    */
-    virtual int encode_packet(SrsStream* stream);
 };
 
 /**
@@ -535,10 +736,12 @@ public:
     * Command information object which has the name-value pairs.
     * @remark: alloc in packet constructor, user can directly use it, 
     *       user should never alloc it again which will cause memory leak.
+    * @remark, never be NULL.
     */
     SrsAmf0Object* command_object;
     /**
     * Any optional information
+    * @remark, optional, init to and maybe NULL.
     */
     SrsAmf0Object* args;
 public:
@@ -549,7 +752,7 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -571,11 +774,13 @@ public:
     double transaction_id;
     /**
     * Name-value pairs that describe the properties(fmsver etc.) of the connection.
+    * @remark, never be NULL.
     */
     SrsAmf0Object* props;
     /**
     * Name-value pairs that describe the response from|the server. ‘code’,
     * ‘level’, ‘description’ are names of few among such information.
+    * @remark, never be NULL.
     */
     SrsAmf0Object* info;
 public:
@@ -586,7 +791,7 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -613,10 +818,12 @@ public:
     /**
     * If there exists any command info this
     * is set, else this is set to null type.
+    * @remark, optional, init to and maybe NULL.
     */
     SrsAmf0Any* command_object;
     /**
     * Any optional arguments to be provided
+    * @remark, optional, init to and maybe NULL.
     */
     SrsAmf0Any* arguments;
 public:
@@ -627,7 +834,7 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -649,10 +856,12 @@ public:
     double transaction_id;
     /**
     * If there exists any command info this is set, else this is set to null type.
+    * @remark, optional, init to and maybe NULL.
     */
     SrsAmf0Any* command_object;
     /**
     * Response from the method that was called.
+    * @remark, optional, init to and maybe NULL.
     */
     SrsAmf0Any* response;
 public:
@@ -660,7 +869,7 @@ public:
     virtual ~SrsCallResPacket();
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -687,6 +896,7 @@ public:
     double transaction_id;
     /**
     * If there exists any command info this is set, else this is set to null type.
+    * @remark, never be NULL, an AMF0 null instance.
     */
     SrsAmf0Any* command_object; // null
 public:
@@ -697,7 +907,7 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -719,6 +929,7 @@ public:
     double transaction_id;
     /**
     * If there exists any command info this is set, else this is set to null type.
+    * @remark, never be NULL, an AMF0 null instance.
     */
     SrsAmf0Any* command_object; // null
     /**
@@ -733,7 +944,7 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -756,6 +967,7 @@ public:
     double transaction_id;
     /**
     * Command information object does not exist. Set to null type.
+    * @remark, never be NULL, an AMF0 null instance.
     */
     SrsAmf0Any* command_object; // null
 public:
@@ -782,6 +994,7 @@ public:
     double transaction_id;
     /**
     * If there exists any command info this is set, else this is set to null type.
+    * @remark, never be NULL, an AMF0 null instance.
     */
     SrsAmf0Any* command_object; // null
     /**
@@ -796,7 +1009,7 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -822,10 +1035,12 @@ public:
     double transaction_id;
     /**
     * If there exists any command info this is set, else this is set to null type.
+    * @remark, never be NULL, an AMF0 null instance.
     */
     SrsAmf0Any* command_object; // null
     /**
     * the optional args, set to undefined.
+    * @remark, never be NULL, an AMF0 undefined instance.
     */
     SrsAmf0Any* args; // undefined
 public:
@@ -836,7 +1051,7 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -863,6 +1078,7 @@ public:
     double transaction_id;
     /**
     * Command information object does not exist. Set to null type.
+    * @remark, never be NULL, an AMF0 null instance.
     */
     SrsAmf0Any* command_object; // null
     /**
@@ -890,7 +1106,7 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -915,6 +1131,7 @@ public:
     double transaction_id;
     /**
     * Command information object does not exist. Set to null type.
+    * @remark, never be NULL, an AMF0 null instance.
     */
     SrsAmf0Any* command_object; // null
     /**
@@ -953,6 +1170,7 @@ public:
     double transaction_id;
     /**
     * Command information does not exist. Set to null type.
+    * @remark, never be NULL, an AMF0 null instance.
     */
     SrsAmf0Any* command_object; // null
     /**
@@ -1007,12 +1225,13 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
     virtual int encode_packet(SrsStream* stream);
 };
+
 /**
 * response for SrsPlayPacket.
 * @remark, user must set the stream_id in header.
@@ -1031,12 +1250,14 @@ public:
     double transaction_id;
     /**
     * Command information does not exist. Set to null type.
+    * @remark, never be NULL, an AMF0 null instance.
     */
     SrsAmf0Any* command_object; // null
     /**
     * If the play command is successful, the client receives OnStatus message from
     * server which is NetStream.Play.Start. If the specified stream is not found,
     * NetStream.Play.StreamNotFound is received.
+    * @remark, never be NULL, an AMF0 object instance.
     */
     SrsAmf0Object* desc;
 public:
@@ -1044,7 +1265,7 @@ public:
     virtual ~SrsPlayResPacket();
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -1067,6 +1288,7 @@ public:
     double transaction_id;
     /**
     * Command information does not exist. Set to null type.
+    * @remark, never be NULL, an AMF0 null instance.
     */
     SrsAmf0Any* args; // null
 public:
@@ -1074,7 +1296,7 @@ public:
     virtual ~SrsOnBWDonePacket();
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -1083,7 +1305,7 @@ protected:
 
 /**
 * onStatus command, AMF0 Call
-* @remark, user must set the stream_id by SrsMessage.set_packet().
+* @remark, user must set the stream_id by SrsCommonMessage.set_packet().
 */
 class SrsOnStatusCallPacket : public SrsPacket
 {
@@ -1098,11 +1320,13 @@ public:
     double transaction_id;
     /**
     * Command information does not exist. Set to null type.
+    * @remark, never be NULL, an AMF0 null instance.
     */
     SrsAmf0Any* args; // null
     /**
     * Name-value pairs that describe the response from the server. 
     * ‘code’,‘level’, ‘description’ are names of few among such information.
+    * @remark, never be NULL, an AMF0 object instance.
     */
     SrsAmf0Object* data;
 public:
@@ -1110,7 +1334,7 @@ public:
     virtual ~SrsOnStatusCallPacket();
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -1138,11 +1362,13 @@ public:
     double transaction_id;
     /**
     * Command information does not exist. Set to null type.
+    * @remark, never be NULL, an AMF0 null instance.
     */
     SrsAmf0Any* args; // null
     /**
     * Name-value pairs that describe the response from the server.
     * ‘code’,‘level’, ‘description’ are names of few among such information.
+    * @remark, never be NULL, an AMF0 object instance.
     */
     SrsAmf0Object* data;
 public:
@@ -1153,31 +1379,42 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
     virtual int encode_packet(SrsStream* stream);
 // help function for bandwidth packet.
 public:
+    virtual bool is_start_play();
     virtual bool is_starting_play();
+    virtual bool is_stop_play();
     virtual bool is_stopped_play();
+    virtual bool is_start_publish();
     virtual bool is_starting_publish();
+    virtual bool is_stop_publish();
     virtual bool is_stopped_publish();
-    virtual bool is_flash_final();
-    static SrsBandwidthPacket* create_finish();
+    virtual bool is_finish();
+    virtual bool is_final();
     static SrsBandwidthPacket* create_start_play();
+    static SrsBandwidthPacket* create_starting_play();
     static SrsBandwidthPacket* create_playing();
     static SrsBandwidthPacket* create_stop_play();
+    static SrsBandwidthPacket* create_stopped_play();
     static SrsBandwidthPacket* create_start_publish();
+    static SrsBandwidthPacket* create_starting_publish();
+    static SrsBandwidthPacket* create_publishing();
     static SrsBandwidthPacket* create_stop_publish();
+    static SrsBandwidthPacket* create_stopped_publish();
+    static SrsBandwidthPacket* create_finish();
+    static SrsBandwidthPacket* create_final();
 private:
     virtual SrsBandwidthPacket* set_command(std::string command);
 };
 
 /**
 * onStatus data, AMF0 Data
-* @remark, user must set the stream_id by SrsMessage.set_packet().
+* @remark, user must set the stream_id by SrsCommonMessage.set_packet().
 */
 class SrsOnStatusDataPacket : public SrsPacket
 {
@@ -1189,6 +1426,7 @@ public:
     /**
     * Name-value pairs that describe the response from the server.
     * ‘code’, are names of few among such information.
+    * @remark, never be NULL, an AMF0 object instance.
     */
     SrsAmf0Object* data;
 public:
@@ -1196,7 +1434,7 @@ public:
     virtual ~SrsOnStatusDataPacket();
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -1205,7 +1443,7 @@ protected:
 
 /**
 * AMF0Data RtmpSampleAccess
-* @remark, user must set the stream_id by SrsMessage.set_packet().
+* @remark, user must set the stream_id by SrsCommonMessage.set_packet().
 */
 class SrsSampleAccessPacket : public SrsPacket
 {
@@ -1231,7 +1469,7 @@ public:
     virtual ~SrsSampleAccessPacket();
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -1252,6 +1490,7 @@ public:
     std::string name;
     /**
     * Metadata of stream.
+    * @remark, never be NULL, an AMF0 object instance.
     */
     SrsAmf0Object* metadata;
 public:
@@ -1262,7 +1501,7 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -1286,7 +1525,7 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -1307,7 +1546,7 @@ public:
     virtual ~SrsAcknowledgementPacket();
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -1335,11 +1574,21 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
     virtual int encode_packet(SrsStream* stream);
+};
+
+// 5.6. Set Peer Bandwidth (6)
+enum SrsPeerBandwidthType
+{
+    // The sender can mark this message hard (0), soft (1), or dynamic (2)
+    // using the Limit type field.
+    SrsPeerBandwidthHard = 0,
+    SrsPeerBandwidthSoft = 1,
+    SrsPeerBandwidthDynamic = 2,
 };
 
 /**
@@ -1351,13 +1600,14 @@ class SrsSetPeerBandwidthPacket : public SrsPacket
 {
 public:
     int32_t bandwidth;
+    // @see: SrsPeerBandwidthType
     int8_t type;
 public:
     SrsSetPeerBandwidthPacket();
     virtual ~SrsSetPeerBandwidthPacket();
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
@@ -1480,68 +1730,12 @@ public:
     virtual int decode(SrsStream* stream);
 // encode functions for concrete packet to override.
 public:
-    virtual int get_perfer_cid();
+    virtual int get_prefer_cid();
     virtual int get_message_type();
 protected:
     virtual int get_size();
     virtual int encode_packet(SrsStream* stream);
 };
 
-/**
-* expect a specified message, drop others util got specified one.
-* @pmsg, user must free it. NULL if not success.
-* @ppacket, store in the pmsg, user must never free it. NULL if not success.
-* @remark, only when success, user can use and must free the pmsg/ppacket.
-* for example:
-         SrsCommonMessage* msg = NULL;
-        SrsConnectAppResPacket* pkt = NULL;
-        if ((ret = srs_rtmp_expect_message<SrsConnectAppResPacket>(protocol, &msg, &pkt)) != ERROR_SUCCESS) {
-            return ret;
-        }
-        // use pkt
-* user should never recv message and convert it, use this method instead.
-* if need to set timeout, use set timeout of SrsProtocol.
-*/
-template<class T>
-int srs_rtmp_expect_message(SrsProtocol* protocol, SrsMessage** pmsg, T** ppacket)
-{
-    *pmsg = NULL;
-    *ppacket = NULL;
-    
-    int ret = ERROR_SUCCESS;
-    
-    while (true) {
-        SrsMessage* msg = NULL;
-        if ((ret = protocol->recv_message(&msg)) != ERROR_SUCCESS) {
-            srs_error("recv message failed. ret=%d", ret);
-            return ret;
-        }
-        srs_verbose("recv message success.");
-        
-        SrsPacket* packet = NULL;
-        if ((ret = protocol->decode_message(msg, &packet)) != ERROR_SUCCESS) {
-            srs_error("decode message failed. ret=%d", ret);
-            srs_freep(msg);
-            srs_freep(packet);
-            return ret;
-        }
-        
-        T* pkt = dynamic_cast<T*>(packet);
-        if (!pkt) {
-            srs_info("drop message(type=%d, size=%d, time=%"PRId64", sid=%d).", 
-                msg->header.message_type, msg->header.payload_length,
-                msg->header.timestamp, msg->header.stream_id);
-            srs_freep(msg);
-            srs_freep(packet);
-            continue;
-        }
-        
-        *pmsg = msg;
-        *ppacket = pkt;
-        break;
-    }
-    
-    return ret;
-}
-
 #endif
+

@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -21,31 +21,5 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#include <srs_protocol_msg_array.hpp>
-
-#include <srs_protocol_rtmp_stack.hpp>
-
-SrsSharedPtrMessageArray::SrsSharedPtrMessageArray(int _size)
-{
-    srs_assert(_size > 0);
-    
-    msgs = new SrsSharedPtrMessage*[_size];
-    size = _size;
-    
-    // initialize
-    for (int i = 0; i < _size; i++) {
-        msgs[i] = NULL;
-    }
-}
-
-SrsSharedPtrMessageArray::~SrsSharedPtrMessageArray()
-{
-    // cleanup
-    for (int i = 0; i < size; i++) {
-        SrsSharedPtrMessage* msg = msgs[i];
-        srs_freep(msg);
-    }
-    
-    srs_freep(msgs);
-}
+#include <srs_core_performance.hpp>
 

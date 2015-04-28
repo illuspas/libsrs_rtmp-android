@@ -21,52 +21,56 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#ifndef SRS_KERNEL_BUFFER_HPP
-#define SRS_KERNEL_BUFFER_HPP
+#ifndef SRS_RTMP_PROTOCOL_MSG_ARRAY_HPP
+#define SRS_RTMP_PROTOCOL_MSG_ARRAY_HPP
 
 /*
-#include <srs_kernel_buffer.hpp>
+#include <srs_rtmp_msg_array.hpp>
 */
 
 #include <srs_core.hpp>
 
-#include <vector>
+class SrsSharedPtrMessage;
 
 /**
-* the simple buffer use vector to append bytes,
-* it's for hls and http, and need to be refined in future.
+* the class to auto free the shared ptr message array.
+* when need to get some messages, for instance, from Consumer queue,
+* create a message array, whose msgs can used to accept the msgs,
+* then send each message and set to NULL.
+*
+* @remark: user must free all msgs in array, for the SRS2.0 protocol stack
+*       provides an api to send messages, @see send_and_free_messages
 */
-class SrsSimpleBuffer
+class SrsMessageArray
 {
+public:
+    /**
+    * when user already send the msg in msgs, please set to NULL,
+    * for instance, msg= msgs.msgs[i], msgs.msgs[i]=NULL, send(msg),
+    * where send(msg) will always send and free it.
+    */
+    SrsSharedPtrMessage** msgs;
+    int max;
+public:
+    /**
+    * create msg array, initialize array to NULL ptrs.
+    */
+    SrsMessageArray(int max_msgs);
+    /**
+    * free the msgs not sent out(not NULL).
+    */
+    virtual ~SrsMessageArray();
+public:
+    /**
+    * free specified count of messages.
+    */
+    virtual void free(int count);
 private:
-    std::vector<char> data;
-public:
-    SrsSimpleBuffer();
-    virtual ~SrsSimpleBuffer();
-public:
     /**
-    * get the length of buffer. empty if zero.
-    * @remark assert length() is not negative.
+    * zero initialize the message array.
     */
-    virtual int length();
-    /**
-    * get the buffer bytes.
-    * @return the bytes, NULL if empty.
-    */
-    virtual char* bytes();
-    /**
-    * erase size of bytes from begin.
-    * @param size to erase size of bytes. 
-    *       clear if size greater than or equals to length()
-    * @remark ignore size is not positive.
-    */
-    virtual void erase(int size);
-    /**
-    * append specified bytes to buffer.
-    * @param size the size of bytes
-    * @remark assert size is positive.
-    */
-    virtual void append(const char* bytes, int size);
+    virtual void zero(int count);
 };
 
 #endif
+

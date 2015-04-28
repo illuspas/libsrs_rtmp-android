@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -21,44 +21,45 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#include <srs_protocol_io.hpp>
+#include <srs_rtmp_msg_array.hpp>
 
-ISrsBufferWriter::ISrsBufferWriter()
+#include <srs_rtmp_stack.hpp>
+
+SrsMessageArray::SrsMessageArray(int max_msgs)
 {
+    srs_assert(max_msgs > 0);
+    
+    msgs = new SrsSharedPtrMessage*[max_msgs];
+    max = max_msgs;
+    
+    zero(max_msgs);
 }
 
-ISrsBufferWriter::~ISrsBufferWriter()
+SrsMessageArray::~SrsMessageArray()
 {
+    // we just free the msgs itself,
+    // both delete and delete[] is ok,
+    // for each msg in msgs is already freed by send_and_free_messages.
+    srs_freep(msgs);
 }
 
-ISrsProtocolStatistic::ISrsProtocolStatistic()
+void SrsMessageArray::free(int count)
 {
+    // initialize
+    for (int i = 0; i < count; i++) {
+        SrsSharedPtrMessage* msg = msgs[i];
+        srs_freep(msg);
+        
+        msgs[i] = NULL;
+    }
 }
 
-ISrsProtocolStatistic::~ISrsProtocolStatistic()
+void SrsMessageArray::zero(int count)
 {
+    // initialize
+    for (int i = 0; i < count; i++) {
+        msgs[i] = NULL;
+    }
 }
 
-ISrsProtocolReader::ISrsProtocolReader()
-{
-}
 
-ISrsProtocolReader::~ISrsProtocolReader()
-{
-}
-
-ISrsProtocolWriter::ISrsProtocolWriter()
-{
-}
-
-ISrsProtocolWriter::~ISrsProtocolWriter()
-{
-}
-
-ISrsProtocolReaderWriter::ISrsProtocolReaderWriter()
-{
-}
-
-ISrsProtocolReaderWriter::~ISrsProtocolReaderWriter()
-{
-}

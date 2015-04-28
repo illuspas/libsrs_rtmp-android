@@ -21,18 +21,53 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#include <srs_kernel_error.hpp>
+#ifndef SRS_KERNEL_AAC_HPP
+#define SRS_KERNEL_AAC_HPP
 
-bool srs_is_system_control_error(int error_code)
-{
-    return error_code == ERROR_CONTROL_RTMP_CLOSE
-        || error_code == ERROR_CONTROL_REPUBLISH;
-}
+/*
+#include <srs_kernel_aac.hpp>
+*/
+#include <srs_core.hpp>
 
-bool srs_is_client_gracefully_close(int error_code)
+#include <string>
+
+#include <srs_kernel_codec.hpp>
+
+class SrsStream;
+class SrsFileWriter;
+class SrsFileReader;
+
+/**
+* encode data to aac file.
+*/
+class SrsAacEncoder
 {
-    return error_code == ERROR_SOCKET_READ
-        || error_code == ERROR_SOCKET_READ_FULLY
-        || error_code == ERROR_SOCKET_WRITE;
-}
+private:
+    SrsFileWriter* _fs;
+private:
+    SrsAacObjectType aac_object;
+    int8_t aac_sample_rate;
+    int8_t aac_channels;
+    bool got_sequence_header;
+private:
+    SrsStream* tag_stream;
+public:
+    SrsAacEncoder();
+    virtual ~SrsAacEncoder();
+public:
+    /**
+    * initialize the underlayer file stream.
+    * @remark user can initialize multiple times to encode multiple aac files.
+    * @remark, user must free the fs, aac encoder never close/free it.
+    */
+    virtual int initialize(SrsFileWriter* fs);
+public:
+    /**
+    * write audio/video packet.
+    * @remark assert data is not NULL.
+    */
+    virtual int write_audio(int64_t timestamp, char* data, int size);
+};
+
+#endif
 

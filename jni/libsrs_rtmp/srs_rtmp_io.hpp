@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -25,14 +25,15 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define SRS_RTMP_PROTOCOL_IO_HPP
 
 /*
-#include <srs_protocol_io.hpp>
+#include <srs_rtmp_io.hpp>
 */
 
 #include <srs_core.hpp>
 
+// for srs-librtmp, @see https://github.com/winlinvip/simple-rtmp-server/issues/213
+#ifndef _WIN32
 #include <sys/uio.h>
-
-#include <srs_kernel_buffer.hpp>
+#endif
 
 /**
 * the system io reader/writer architecture:
@@ -58,6 +59,19 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           | + is_never_timeout()             |
           +----------------------------------+
 */
+
+/**
+* the reader for the buffer to read from whatever channel.
+*/
+class ISrsBufferReader
+{
+public:
+    ISrsBufferReader();
+    virtual ~ISrsBufferReader();
+// for protocol/amf0/msg-codec
+public:
+    virtual int read(void* buf, size_t size, ssize_t* nread) = 0;
+};
 
 /**
 * the writer for the buffer to write to whatever channel.
@@ -167,3 +181,4 @@ public:
 };
 
 #endif
+

@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -30,7 +30,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <srs_core.hpp>
 
 #include <string>
-#include <sys/stat.h> 
+
 /**
 * file writer, to write to file.
 */
@@ -47,9 +47,14 @@ public:
     * open file writer, can open then close then open...
     */
     virtual int open(std::string file);
+    /**
+    * open file writer in append mode.
+    */
+    virtual int open_append(std::string file);
     virtual void close();
 public:
     virtual bool is_open();
+    virtual void lseek(int64_t offset);
     virtual int64_t tellg();
 public:
     /**
@@ -77,6 +82,7 @@ public:
     virtual int open(std::string file);
     virtual void close();
 public:
+    // TODO: FIXME: extract interface.
     virtual bool is_open();
     virtual int64_t tellg();
     virtual void skip(int64_t size);
@@ -91,3 +97,4 @@ public:
 };
 
 #endif
+

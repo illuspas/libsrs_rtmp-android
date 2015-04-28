@@ -21,18 +21,6 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#include <srs_kernel_error.hpp>
+#include <srs_kernel_consts.hpp>
 
-bool srs_is_system_control_error(int error_code)
-{
-    return error_code == ERROR_CONTROL_RTMP_CLOSE
-        || error_code == ERROR_CONTROL_REPUBLISH;
-}
-
-bool srs_is_client_gracefully_close(int error_code)
-{
-    return error_code == ERROR_SOCKET_READ
-        || error_code == ERROR_SOCKET_READ_FULLY
-        || error_code == ERROR_SOCKET_WRITE;
-}
 

@@ -1,7 +1,7 @@
 /*
 The MIT License (MIT)
 
-Copyright (c) 2013-2014 winlin
+Copyright (c) 2013-2015 winlin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -21,43 +21,51 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#ifndef SRS_RTMP_PROTOCOL_MSG_ARRAY_HPP
-#define SRS_RTMP_PROTOCOL_MSG_ARRAY_HPP
+#ifndef SRS_KERNEL_MP3_HPP
+#define SRS_KERNEL_MP3_HPP
 
 /*
-#include <srs_protocol_msg_array.hpp>
+#include <srs_kernel_mp3.hpp>
 */
-
 #include <srs_core.hpp>
 
-class SrsSharedPtrMessage;
+#include <string>
+
+class SrsStream;
+class SrsFileWriter;
+class SrsFileReader;
 
 /**
-* the class to auto free the shared ptr message array.
-* when need to get some messages, for instance, from Consumer queue,
-* create a message array, whose msgs can used to accept the msgs,
-* then send each message and set to NULL.
-* @remark: when error, the message array will free the msg not sent out.
+* encode data to aac file.
 */
-class SrsSharedPtrMessageArray
+class SrsMp3Encoder
 {
+private:
+    SrsFileWriter* _fs;
+private:
+    SrsStream* tag_stream;
+public:
+    SrsMp3Encoder();
+    virtual ~SrsMp3Encoder();
 public:
     /**
-    * when user already send the msg in msgs, please set to NULL,
-    * for instance, msg= msgs.msgs[i], msgs.msgs[i]=NULL, send(msg),
-    * where send(msg) will always send and free it.
+    * initialize the underlayer file stream.
+    * @remark user can initialize multiple times to encode multiple mp3 files.
+    * @remark, user must free the fs, mp3 encoder never close/free it.
     */
-    SrsSharedPtrMessage** msgs;
-    int size;
+    virtual int initialize(SrsFileWriter* fs);
 public:
     /**
-    * create msg array, initialize array to NULL ptrs.
+    * write mp3 id3 v2.3 header.
+    * @see mp3.id3v2.3.0.pdf, http://id3.org/id3v2.3.0
     */
-    SrsSharedPtrMessageArray(int _size);
+    virtual int write_header();
     /**
-    * free the msgs not sent out(not NULL).
+    * write audio/video packet.
+    * @remark assert data is not NULL.
     */
-    virtual ~SrsSharedPtrMessageArray();
+    virtual int write_audio(int64_t timestamp, char* data, int size);
 };
 
 #endif
+

@@ -43,9 +43,7 @@ using namespace std;
 #include <srs_kernel_utility.hpp>
 #include <srs_kernel_stream.hpp>
 #include <srs_rtmp_amf0.hpp>
-#include <srs_kernel_flv.hpp>
 #include <srs_kernel_codec.hpp>
-#include <srs_kernel_file.hpp>
 #include <srs_lib_bandwidth.hpp>
 #include <srs_raw_avc.hpp>
 

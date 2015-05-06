@@ -28,11 +28,10 @@ common_SRC_FILES := \
 common_C_INCLUDES = $(LOCAL_PATH)/libsrs_rtmp               
 
 include $(CLEAR_VARS)
-LOCAL_MODULE:=  libsrs_rtmp
-LOCAL_SRC_FILES := $(common_SRC_FILES)
-LOCAL_CFLAGS += $(common_CFLAGS)
-LOCAL_CXXFLAGS 			:= $(LOCAL_CXXFLAGS) -frtti
-LOCAL_LDFLAGS += $(common_LDFLAGS) -lstdc++
-LOCAL_C_INCLUDES += $(common_C_INCLUDES)
+LOCAL_MODULE		:= libsrs_rtmp
+LOCAL_SRC_FILES 	:= $(common_SRC_FILES)
+LOCAL_CFLAGS 		:= $(common_CFLAGS)
+LOCAL_CXXFLAGS 		:= $(LOCAL_CXXFLAGS) -frtti
+LOCAL_C_INCLUDES 	:= $(common_C_INCLUDES)
 
 include $(BUILD_STATIC_LIBRARY)
